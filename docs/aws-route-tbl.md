@@ -1,44 +1,81 @@
-# AWS Route Table
-A route table contains a set of rules, called routes, that are used to determine where network traffic from your subnet or gateway is directed. 
+# Route Tables & Packet Routing
 
-![alt case-1](assets/route-eg.png)
+## Overview
+A route table contains a set of rules (called routes) that determine where network packets from your subnet, gateway, or VPN endpoint are directed. In an AWS Client VPN architecture, routing occurs across two distinct layers:
 
-## Route table concepts
+1. **The Client VPN Endpoint Route Table**: Controls which destination CIDR routes are pushed to connected VPN clients and permitted through the endpoint gateway.
+2. **The Associated Subnet VPC Route Table**: Dictates packet forwarding once traffic egresses the Client VPN Network Interface into the VPC.
 
-The following are the key concepts for route tables.
+![AWS Route Table Architecture](assets/route-eg.png)
 
-### Main route table
-The route table that automatically comes with your VPC. It controls the routing for all subnets that are not explicitly associated with any other route table.
+---
 
-### Custom route table 
-A route table that you create for your VPC.
+## The Dual-Layer Routing Architecture
 
-### Edge association
-A route table that you use to route inbound VPC traffic to an appliance. You associate a route table with the internet gateway or virtual private gateway, and specify the network interface of your appliance as the target for VPC traffic.
+```mermaid
+flowchart TD
+    Client["Connected Client<br/>Assigned IP: 172.16.0.5"] -->|Encrypted Tunnel| Endpoint["Client VPN Endpoint"]
 
-### Route table association 
-The association between a route table and a subnet, internet gateway, or virtual private gateway.
+    subgraph ClientVPNRouting ["Layer 1: Client VPN Route Table"]
+        R1["Route 1: 10.0.0.0/16 to Associated Subnet"]
+        R2["Route 2: 10.1.0.0/16 to Peered VPC"]
+        R3["Route 3: 0.0.0.0/0 to Internet via NAT"]
+    end
 
-### Subnet route table 
-A route table that's associated with a subnet.
+    Endpoint --> ClientVPNRouting
+    ClientVPNRouting --> ENI["Subnet ENI<br/>SNAT IP: 10.0.10.15"]
 
-### Gateway route table 
-A route table that's associated with an internet gateway or virtual private gateway.
+    subgraph VPCRouting ["Layer 2: VPC Subnet Route Table"]
+        VR1["10.0.0.0/16 to local"]
+        VR2["10.1.0.0/16 to Peering Connection"]
+        VR3["0.0.0.0/0 to NAT Gateway"]
+    end
 
-### Local gateway route table 
-A route table that's associated with an Outposts local gateway. For information about local gateways, see Local Gateways in the AWS Outposts User Guide.
+    ENI --> VPCRouting
+```
 
-### Destination 
-The range of IP addresses where you want traffic to go (destination CIDR). For example, an external corporate network with a 172.16.0.0/12 CIDR.
+!!! note "The Two-Way Routing Requirement"
+    For client traffic to reach a destination network (such as a peered VPC or an on-premises server):
 
-### Propagation 
-Route propagation allows a virtual private gateway to automatically propagate routes to the route tables. This means that you don't need to manually enter VPN routes to your route tables. 
-> For more information about VPN routing options, see Site-to-Site VPN routing options in the Site-to-Site VPN User Guide.
+    1. You must create a route in the **Client VPN Endpoint Route Table** targeting the destination CIDR.
+    2. The **VPC Route Table** of the associated subnet must have a valid route targeting that same CIDR (e.g. via a Transit Gateway, Peering Connection, or Virtual Private Gateway).
+    3. An **Authorization Rule** must exist on the Client VPN endpoint granting the client access to that CIDR.
 
-### Target 
-The gateway, network interface, or connection through which to send the destination traffic; for example, an internet gateway.
+---
 
-### Local route
-A default route for communication within the VPC.
+## Route Priority: Longest Prefix Match (LPM)
 
+AWS route tables follow the **Longest Prefix Match** algorithm. If multiple routes overlap, the most specific route (the one with the largest subnet mask / prefix length) takes precedence:
 
+| Destination CIDR | Target Gateway | Priority Context |
+| :--- | :--- | :--- |
+| `10.0.0.0/16` | `local` | VPC-wide communication |
+| `10.0.1.0/24` | `eni-12345` | Specific appliance override (more specific than `/16`) |
+| `0.0.0.0/0` | `nat-98765` | Default catch-all route for outbound traffic |
+
+---
+
+## Route Table Types in Enterprise AWS
+
+### 1. Main Route Table
+The default route table automatically assigned to any subnet that is not explicitly associated with a custom route table. In production enterprise architectures, the main route table should be left empty or restricted to prevent accidental internet exposure of newly created subnets.
+
+### 2. Custom Subnet Route Tables
+Dedicated route tables associated explicitly with subnets:
+
+* **Client VPN Association Route Table**: Points local traffic to `local`, internet traffic (`0.0.0.0/0`) to an egress NAT Gateway, and corporate ranges to Transit Gateway (`tgw-xxxx`).
+* **Private App Route Table**: Isolated from public gateways.
+
+### 3. Gateway & Edge Association Route Tables
+Associated directly with an Internet Gateway (IGW) or Virtual Private Gateway (VGW) to intercept inbound ingress traffic and route it through virtual firewall appliances (e.g., AWS Network Firewall or third-party NGFWs) before reaching workload subnets.
+
+---
+
+## Split-Tunnel vs Full-Tunnel Routing Table Behavior
+
+| Parameter | Split-Tunnel Enabled | Full-Tunnel (Split-Tunnel Disabled) |
+| :--- | :--- | :--- |
+| **Default Route (`0.0.0.0/0`)** | Retained on client local ISP adapter | Overwritten to point through Client VPN tunnel |
+| **Corporate Routes** | Only specified CIDRs (e.g. `10.0.0.0/16`) pushed to client OS | All traffic pushed through Client VPN endpoint |
+| **Bandwidth Cost** | Zero AWS egress cost for client web/streaming traffic | High AWS egress cost; all web browsing traverses AWS NAT Gateway |
+| **Enterprise Use Case** | Developer workstations & remote engineers | High-security government or financial compliance environments requiring full internet inspection |

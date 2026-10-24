@@ -1,59 +1,92 @@
-site_name: Improving the architecture using client vpn
-site_url: https://example.com/
+site_name: AWS Client VPN Enterprise Architecture
+site_description: Enterprise Cloud Network Architecture, Zero-Trust Access, and Production Blueprint for AWS Client VPN.
+site_author: AWS Network Architecture Team
+site_url: https://dev-anuj007.github.io/
+repo_url: https://github.com/dev-anuj007/aws-client-vpn-architecture
+repo_name: dev-anuj007/aws-client-vpn-architecture
+
 nav: 
-  - Overview: index.md
-  - Pre-requisite Overview:
-    - Security group: aws-sg.md
-    - Route Table: aws-route-tbl.md
-    - Virtual Private Cloud: aws-vpc.md
-    - Subnet: subnet.md
-    - Elastic-network-interface: eni.md
-  - AWS Client VPN:
-    - Overview: aws-cvpn.md
-    - Working Mechanism: cvpn-working-mechanism.md
-    - Authentication & Authorization: cvpn-auth.md
-    - Use Case: cvpn-use-case.md
-    - Security: cvpn-security.md
-    - Monitoring: cvpn-monitoring.md
-  - Reference : reference.md
-  - FAQ: faq.md
-  - Extra: osi-model.md
+  - Executive Overview: index.md
+  - Network Fundamentals:
+      - VPC Architecture & Design: aws-vpc.md
+      - Subnet & CIDR Allocation: subnet.md
+      - Route Tables & Packet Routing: aws-route-tbl.md
+      - Security Groups & Stateful Filtering: aws-sg.md
+      - Elastic Network Interfaces (ENI): eni.md
+      - Applied OSI Networking Model: osi-model.md
+  - AWS Client VPN Core:
+      - Service Architecture & Endpoints: aws-cvpn.md
+      - Packet Flow & Working Mechanism: cvpn-working-mechanism.md
+      - Authentication & Identity Federation: cvpn-auth.md
+      - Enterprise Scenarios & Use Cases: cvpn-use-case.md
+      - Security Hardening & Zero-Trust: cvpn-security.md
+      - Observability & Telemetry: cvpn-monitoring.md
+  - Operations & Governance:
+      - Architecture FAQ: faq.md
+      - References & Standards: reference.md
+
 theme:
   name: material
+  language: en
+  font:
+    text: Roboto
+    code: Roboto Mono
   palette:
-    - scheme: default
-      primary: blue grey
+    # Palette toggle for automatic mode
+    - media: "(prefers-color-scheme)"
       toggle:
-          icon: material/toggle-switch-off-outline
-          name: Switch to dark mode
-    - scheme: slate
-      primary: blue grey
-      toggle:
-        icon: material/toggle-switch
+        icon: material/brightness-auto
         name: Switch to light mode
+    # Light mode
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: deep purple
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    # Dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: deep purple
+      toggle:
+        icon: material/brightness-4
+        name: Switch to system preference
   features:
+    - navigation.tabs
     - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - search.suggest
+    - search.highlight
+    - search.share
+    - content.code.copy
+    - content.tabs.link
+    - toc.follow
 
-plugins:
-    - with-pdf:
-        author: Anuj Kumar Singh
-        copyright: Open-book
-        cover: true
-        back_cover: true
-        cover_title: AWS Client VPN
-        cover_subtitle: Enhancement of current system with CVPN
-        custom_template_path: TEMPLATES PATH
-        exclude_pages:
-            - 'osi-model/'
+extra_css:
+  - stylesheets/extra.css
 
-        two_columns_level: 3
-
-
-        output_path: ../book/document.pdf
-
-        debug_html: false
-        show_anchors: true
-        verbose: true
-
-
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.tabbed:
+      alternate_style: true
+  - tables
+  - attr_list
+  - md_in_html
+  - toc:
+      permalink: true
+      toc_depth: 3
 

@@ -1,0 +1,29 @@
+name: CI Documentation Validation
+
+on:
+  pull_request:
+    branches:
+      - master
+      - main
+
+jobs:
+  validate-docs:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          version: "latest"
+
+      - name: Set up Python
+        run: uv python install 3.11
+
+      - name: Install Dependencies
+        run: uv sync --frozen
+
+      - name: Strict MkDocs Build Test
+        run: uv run mkdocs build --strict

@@ -1,29 +1,79 @@
-# AWS-VPC
-Amazon Virtual Private Cloud (Amazon VPC) enables you to launch AWS resources into a virtual network that you've defined. This virtual network closely resembles a traditional network that you'd operate in your own data center, with the benefits of using the scalable infrastructure of AWS. 
+# Amazon VPC Architecture & Design
 
-![alt vpc-nat](assets/vpc-nat.png)
+## Overview
+Amazon Virtual Private Cloud (Amazon VPC) provisions a logically isolated virtual network within the AWS Cloud. Designing an enterprise VPC requires careful IP address management (IPAM), multi-tier segmentation, and resilient routing topologies to support secure remote access via AWS Client VPN.
 
-## Amazon VPC concepts
+![VPC NAT Architecture](assets/vpc-nat.png)
 
+---
 
-The following are the key concepts for VPCs:
+## Multi-Tier Subnet Topology
 
-### Virtual private cloud (VPC)
-A virtual network dedicated to your AWS account.
+A robust VPC architecture segments network assets into functional tiers, enforcing least-privilege traffic flow between layers:
 
-### Subnet
-A range of IP addresses in your VPC.
+```mermaid
+flowchart TD
+    subgraph PublicSubnets ["Public Ingress Tier (DMZ)"]
+        NAT1["NAT Gateway (AZ-a)"]
+        NAT2["NAT Gateway (AZ-b)"]
+        ALB["Application Load Balancer"]
+    end
 
-### Route table
-A set of rules, called routes, that are used to determine where network traffic is directed.
+    subgraph VPNSubnets ["Client VPN Association Tier"]
+        VPN_ENI1["Client VPN ENI (AZ-a)<br/>10.0.10.0/28"]
+        VPN_ENI2["Client VPN ENI (AZ-b)<br/>10.0.11.0/28"]
+    end
 
-### Internet gateway
-A gateway that you attach to your VPC to enable communication between resources in your VPC and the internet.
+    subgraph PrivateAppSubnets ["Private Application Tier"]
+        App1["EC2 / EKS Compute (AZ-a)"]
+        App2["EC2 / EKS Compute (AZ-b)"]
+    end
 
-### VPC endpoint
-Enables you to privately connect your VPC to supported AWS services and VPC endpoint services powered by PrivateLink without requiring an internet gateway, NAT device, VPN connection, or AWS Direct Connect connection. Instances in your VPC do not require public IP addresses to communicate with resources in the service. Traffic between your VPC and the other service does not leave the Amazon network. For more information, see AWS PrivateLink and VPC endpoints.
+    subgraph IsolatedDataSubnets ["Isolated Database Tier"]
+        RDS1["Aurora / RDS Primary (AZ-a)"]
+        RDS2["Aurora / RDS Standby (AZ-b)"]
+    end
 
-### CIDR block 
-Classless Inter-Domain Routing. An internet protocol address allocation and route aggregation methodology
+    VPN_ENI1 --> App1
+    VPN_ENI2 --> App2
+    App1 --> RDS1
+    App2 --> RDS2
+```
 
-> CIDR: classless inter-domain routing
+### Subnet Tiers Breakdown
+
+| Subnet Tier | Routing Characteristics | Workload Purpose |
+| :--- | :--- | :--- |
+| **Public Subnets** | Default route `0.0.0.0/0` targeting an Internet Gateway (IGW). | NAT Gateways, Public ALBs. No backend compute. |
+| **Client VPN Subnets** | Private subnets dedicated exclusively for Client VPN Endpoint associations. | Managed ENIs provisioned by the Client VPN service. |
+| **Private App Subnets** | Default route `0.0.0.0/0` targeting NAT Gateways for outbound internet updates. | Microservices, EC2 instances, EKS worker nodes. |
+| **Isolated Database Tier** | No route to internet gateways or NAT devices; strictly intra-VPC routing. | RDS, DynamoDB VPC endpoints, Aurora clusters. |
+
+---
+
+## Core Networking Constructs
+
+### CIDR Block Allocation (RFC 1918)
+When planning a VPC that interfaces with AWS Client VPN, CIDR allocations must strictly avoid IP overlap:
+
+* **VPC CIDR**: Typically a `/16` block (e.g. `10.0.0.0/16` providing 65,536 addresses).
+* **Client VPN Client CIDR**: Must **not overlap** with the VPC CIDR, any peered VPCs, or corporate on-premises subnets (e.g., allocating `172.16.0.0/16` or `10.100.0.0/16` specifically for connecting clients).
+* **Minimum Subnet Size**: Target subnets associated with Client VPN require at least a `/27` or `/28` mask to accommodate AWS reserved IPs and managed ENIs.
+
+!!! warning "AWS Reserved IP Addresses in Every Subnet"
+    In every AWS subnet, the first four and last IP addresses are reserved by AWS:
+
+    * `10.0.0.0`: Network address.
+    * `10.0.0.1`: Reserved by AWS for the VPC router.
+    * `10.0.0.2`: Reserved by AWS for DNS (AmazonProvidedDNS).
+    * `10.0.0.3`: Reserved by AWS for future use.
+    * `10.0.0.255`: Network broadcast address (broadcast is not supported in VPC).
+
+---
+
+### VPC Endpoints & PrivateLink
+VPC Endpoints allow instances and VPN clients to privately communicate with supported AWS services (e.g., S3, CloudWatch Logs, Systems Manager) without traversing the public internet.
+
+* **Gateway Endpoints**: Cost-free route table entries directing S3 and DynamoDB traffic privately over the AWS backbone.
+* **Interface Endpoints (PrivateLink)**: Elastic Network Interfaces with private IP addresses serving as entry points for AWS services (e.g., `ec2.us-east-1.amazonaws.com` or CloudWatch Logs `logs.us-east-1.amazonaws.com`).
+* **Client VPN Relevance**: When Client VPN users are connected, they can resolve and interact with PrivateLink endpoints directly over the VPN tunnel, keeping administrative traffic off the public internet.
